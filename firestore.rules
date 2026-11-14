@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // アカウント本人かつ、指定したGoogleメールの確認済みユーザーだけに許可する。
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId
+        && request.auth.token.email == 'porigone58@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+    match /users/{userId}/projects/{projectId} {
+      allow read, write: if isOwner(userId);
+    }
+    match /users/{userId}/palettes/{paletteId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(['name', 'colors'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 1000
+        && request.resource.data.colors is list
+        && request.resource.data.colors.size() <= 4096;
+      // 名前付きパレットは追加のみ。別名保存で新しいドキュメントを作る。
+      allow update, delete: if false;
+    }
+  }
+}

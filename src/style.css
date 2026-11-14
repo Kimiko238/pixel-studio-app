@@ -1,0 +1,1030 @@
+/* 共通の色・フォントと基本要素。各クラス名はcomponents内のclassNameと対応する。 */
+:root {
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  color: #e5e7eb;
+  background: #0b1120;
+  font-synthesis: none;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+  background: #26344b;
+  color: #e5e7eb;
+  border: 1px solid #3a4960;
+  border-radius: 7px;
+  padding: 7px 10px;
+}
+button:hover {
+  background: #364763;
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+input,
+select {
+  background: #182338;
+  border: 1px solid #38455a;
+  color: #e5e7eb;
+  border-radius: 6px;
+  padding: 7px;
+  min-width: 0;
+}
+input[type='color'] {
+  width: 38px;
+  height: 34px;
+  padding: 2px;
+}
+input[type='checkbox'] {
+  accent-color: #6f92ff;
+}
+/* PCの基本配置：ヘッダー／作業領域（サイドバー＋キャンバス）／状態表示。 */
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.top {
+  height: 64px;
+  background: #101a2c;
+  border-bottom: 1px solid #26354c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  gap: 12px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 19px;
+  white-space: nowrap;
+}
+.brandmark {
+  color: #89a5ff;
+  font-size: 30px;
+}
+.brand small {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #94a3b8;
+}
+.topactions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.topactions .button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.save-status {
+  font-size: 12px;
+  color: #a5b4c9;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 9px;
+}
+.iconbutton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+.workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.tools {
+  width: 278px;
+  flex-shrink: 0;
+  background: #121e31;
+  border-right: 1px solid #293950;
+  padding: 12px;
+  overflow: auto;
+  max-height: calc(100vh - 95px);
+}
+.section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #aab9d0;
+  margin: 15px 0 9px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.toolgrid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+.tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 9px 2px;
+  font-size: 10px;
+  min-width: 0;
+}
+.tool.active,
+.button.selected {
+  background: #345bba;
+  border-color: #6c93ff;
+  color: white;
+}
+.button-row {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 6px 0;
+}
+.button-row .button {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin: 9px 0;
+}
+/* パレット：現在の色一覧、読み込み元、名前付き保存、選択中の色の表示。 */
+.palette-panel {
+  margin-top: 16px;
+  padding: 12px;
+  background: #18273e;
+  border: 1px solid #405574;
+  border-radius: 10px;
+  scroll-margin: 12px;
+}
+.palette-panel-imported {
+  border-color: #8aa7ff;
+  box-shadow: 0 0 0 1px #8aa7ff33;
+}
+.palette-panel:focus-visible {
+  outline: 2px solid #b6c8ff;
+  outline-offset: 3px;
+}
+.palette-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.saved-palettes {
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #405574;
+}
+.saved-palettes label {
+  display: block;
+  font-size: 12px;
+  color: #c2cfe4;
+  margin-bottom: 6px;
+}
+.saved-palettes input,
+.saved-palettes select {
+  width: 100%;
+  font-size: 12px;
+}
+.saved-palettes form {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+.saved-palettes form label {
+  margin-bottom: 0;
+}
+.saved-palettes button {
+  justify-self: start;
+  font-size: 12px;
+}
+/* Googleログインと同期状態の表示。JSONバックアップは必要なときだけ展開する。 */
+.palette-cloud {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+  border: 1px solid #52759b;
+  border-radius: 8px;
+  background: #1a3048;
+}
+.palette-cloud strong,
+.palette-cloud button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.palette-cloud .hint {
+  overflow-wrap: anywhere;
+}
+.palette-cloud .palette-feedback {
+  margin: 0;
+}
+.palette-transfer {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid #405574;
+}
+.palette-transfer summary {
+  cursor: pointer;
+  padding: 10px 0;
+  font-size: 12px;
+  color: #c2cfe4;
+  min-height: 44px;
+}
+.palette-heading h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.palette-count {
+  border-radius: 12px;
+  padding: 3px 8px;
+  background: #30466a;
+  color: #d7e2ff;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.palette-source {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.palette-source span {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #a9c1ff;
+}
+.palette-source strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-feedback {
+  margin: 8px 0;
+  font-size: 12px;
+  color: #b6d8cb;
+  overflow-wrap: anywhere;
+}
+.palette-feedback-error {
+  color: #ffb4a9;
+}
+.palette-instruction {
+  margin: 12px 0 8px;
+  font-size: 12px;
+  color: #c2cfe4;
+}
+.palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
+  gap: 7px;
+  max-height: 210px;
+  overflow: auto;
+  padding: 4px;
+}
+.swatch {
+  aspect-ratio: 1;
+  padding: 0;
+  border-radius: 4px;
+}
+.swatch.chosen {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+.palette-current {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0;
+  font-size: 11px;
+  color: #b7c7dd;
+}
+.palette-current-swatch {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: 1px solid #a6b7d0;
+  border-radius: 5px;
+}
+.palette-current strong {
+  margin-left: auto;
+  color: #f1f5fc;
+  font-family: monospace;
+}
+.hint {
+  font-size: 11px;
+  color: #91a3bc;
+}
+.main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.editorbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 15px;
+  background: #111c2e;
+}
+.projectname {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.projectname input {
+  font-weight: 700;
+  width: 220px;
+}
+.projectname span {
+  font-size: 12px;
+  color: #9aaac1;
+  white-space: nowrap;
+}
+.zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.zoom button {
+  padding: 5px 9px;
+}
+/* canvas本体とは別の表示枠。CSSで見た目を拡大し、画像データは元のドット寸法で保つ。 */
+.canvas-area {
+  flex: 1;
+  min-height: 330px;
+  max-height: calc(100vh - 380px);
+  background: #17243a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  position: relative;
+  background-image: radial-gradient(#2b3d55 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+.canvas-transform {
+  margin: auto;
+  padding: 40px;
+}
+/* 市松模様は背景画像で描く。透明ピクセルを確認するための表示で、書き出す絵には含まれない。 */
+.canvas-holder {
+  position: relative;
+  box-shadow: 0 12px 35px #0008;
+  background-color: white;
+  background-image:
+    linear-gradient(45deg, #e5e5e5 25%, transparent 25%),
+    linear-gradient(-45deg, #e5e5e5 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e5e5e5 75%),
+    linear-gradient(-45deg, transparent 75%, #e5e5e5 75%);
+  background-size: 20px 20px;
+  background-position:
+    0 0,
+    0 10px,
+    10px -10px,
+    -10px 0;
+}
+.canvas-holder.show-grid:after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, #0002 1px, transparent 1px),
+    linear-gradient(to bottom, #0002 1px, transparent 1px);
+  background-size: inherit;
+}
+.canvas-holder canvas {
+  display: block;
+}
+.selection {
+  position: absolute;
+  border: 2px dashed #ffb13b;
+  box-shadow: 0 0 0 1px black;
+  z-index: 2;
+}
+.underbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 6px 12px;
+  color: #9cabc2;
+  font-size: 12px;
+  border-top: 1px solid #27364b;
+}
+.underbar button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 3px 7px;
+  margin-left: auto;
+}
+/* コマとアニメーション操作。PCではキャンバス下、スマホでは開閉パネル内に配置する。 */
+.timeline {
+  background: #101a2c;
+  border-top: 1px solid #2c3b51;
+  padding: 10px 15px;
+}
+.timelinehead,
+.playbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.timelinehead b {
+  margin-right: 7px;
+}
+.timelinehead button,
+.playbar button,
+.playbar select {
+  font-size: 12px;
+}
+.playbar label {
+  font-size: 12px;
+}
+.playbar input {
+  width: 65px;
+  padding: 5px;
+}
+.frames {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 10px;
+}
+.frame {
+  min-width: 72px;
+  height: 86px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+.frame.active {
+  border-color: #7397ff;
+  background: #2e4d8a;
+}
+.frame img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  background: #fff;
+}
+.frame span {
+  font-size: 11px;
+}
+.addframe {
+  min-width: 90px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+.frameactions {
+  margin: 0;
+}
+footer {
+  padding: 6px 14px;
+  background: #0d1625;
+  color: #8c9db6;
+  font-size: 11px;
+  border-top: 1px solid #25364b;
+}
+/* ダイアログの背景。z-indexを操作パネルや下部バーより高くし、上に重ねる。 */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: #050a12c9;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px;
+}
+.dialog {
+  width: min(550px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #142036;
+  border: 1px solid #42516a;
+  border-radius: 13px;
+  padding: 20px;
+  box-shadow: 0 20px 80px #0009;
+}
+.dialog.wide {
+  width: min(1020px, 100%);
+}
+.dialoghead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+.dialoghead h2 {
+  font-size: 19px;
+  margin: 0;
+}
+.dialoghead button {
+  font-size: 20px;
+}
+.dialog h3 {
+  font-size: 15px;
+  margin-top: 20px;
+}
+.dialog p {
+  font-size: 13px;
+  color: #a8b7cb;
+}
+.librarytools {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 15px;
+}
+.librarytools button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+.workcard {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid #34445d;
+  border-radius: 9px;
+  padding: 10px;
+  min-width: 0;
+}
+.workcard strong {
+  overflow-wrap: anywhere;
+}
+.workcard small {
+  color: #a6b5c9;
+}
+.thumbnail {
+  height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-conic-gradient(#d9d9d9 0 25%, #fff 0 50%) 50%/20px 20px;
+  border-radius: 5px;
+}
+.thumbnail img {
+  max-height: 95px;
+  max-width: 95%;
+  image-rendering: pixelated;
+}
+.cardactions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cardactions button {
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.exportpreview {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  margin-top: 15px;
+}
+.exportpreview img {
+  max-width: 90%;
+  max-height: 140px;
+  image-rendering: pixelated;
+}
+.exportbuttons {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 15px;
+}
+.shortcut {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 7px 0;
+  font-size: 13px;
+}
+.shortcut input {
+  width: 45px;
+  text-align: center;
+}
+.floating-preview {
+  position: fixed;
+  right: 20px;
+  top: 85px;
+  z-index: 5;
+  background: #152238;
+  border: 1px solid #6b82a6;
+  padding: 12px;
+  border-radius: 9px;
+  box-shadow: 0 10px 40px #0009;
+}
+.floating-preview > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 10px;
+}
+.floating-preview img {
+  background: #fff;
+}
+.quickimport {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  border-radius: 100%;
+  padding: 13px;
+  box-shadow: 0 5px 20px #0008;
+  z-index: 3;
+}
+/* スマホ専用部品は通常は隠し、下のメディアクエリに一致するときだけ表示する。 */
+.mobile-editor-bar,
+.mobile-panel-backdrop,
+.mobile-panel-heading,
+.mobile-panel-close {
+  display: none;
+}
+/* スマホ縦画面と、タッチ端末の背の低い横画面。PC用配置をここで上書きする。 */
+@media (max-width: 800px), (max-height: 500px) and (pointer: coarse) {
+  .app {
+    --mobile-dock-height: 112px;
+    height: 100vh;
+    /* dvhはブラウザのアドレスバーなどによる表示可能な高さの変化に追従する。 */
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    /* ノッチやホームバーに操作部品が重ならないよう、端末が指定する安全な余白を使う。 */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  .top {
+    height: 56px;
+    min-height: 56px;
+    flex-shrink: 0;
+    padding: 4px 8px;
+    gap: 4px;
+  }
+  .brand {
+    font-size: 14px;
+    gap: 4px;
+  }
+  .brandmark {
+    font-size: 24px;
+  }
+  .brand small {
+    display: none;
+  }
+  .topactions {
+    gap: 2px;
+    flex-wrap: nowrap;
+  }
+  .topactions button {
+    min-width: 40px;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .topactions .button {
+    font-size: 11px;
+    padding: 4px;
+  }
+  .topactions .button span {
+    display: none;
+  }
+  .topactions .button[title='別名保存'] span {
+    display: block;
+    font-size: 10px;
+  }
+  .save-status {
+    display: none;
+  }
+  .workspace {
+    min-height: 0;
+  }
+  .tools {
+    position: fixed;
+    left: max(8px, env(safe-area-inset-left, 0px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+    bottom: calc(var(--mobile-dock-height) + 24px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-height: calc(100dvh - var(--mobile-dock-height) - 100px - env(safe-area-inset-bottom, 0px));
+    padding: 12px;
+    border: 1px solid #526a90;
+    border-radius: 14px;
+    z-index: 25;
+    box-shadow: 0 8px 40px #0009;
+    overscroll-behavior: contain;
+  }
+  .tools.collapsed,
+  .tools[data-mobile-section='palette'] .sidebar-controls,
+  .tools[data-mobile-section='tools'] .palette-panel {
+    display: none;
+  }
+  .tools > .section-title {
+    margin: 0 0 8px;
+    position: sticky;
+    top: -12px;
+    padding: 6px 0;
+    background: #121e31;
+    z-index: 1;
+  }
+  .mobile-panel-close {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .tools .palette-panel {
+    margin-top: 0;
+  }
+  .tools .toolgrid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .tool {
+    min-height: 52px;
+    padding: 8px 2px;
+    font-size: 11px;
+  }
+  .tools .button-row button,
+  .tools .check,
+  .tools select,
+  .saved-palettes input,
+  .saved-palettes button {
+    min-height: 44px;
+  }
+  .tools .palette {
+    max-height: 160px;
+    grid-template-columns: repeat(auto-fill, minmax(34px, 1fr));
+  }
+  .main {
+    min-height: 0;
+    width: 100%;
+  }
+  .editorbar {
+    padding: 4px 8px;
+    flex-shrink: 0;
+    gap: 4px;
+    min-height: 48px;
+  }
+  .projectname {
+    min-width: 0;
+    flex: 1;
+  }
+  .projectname span,
+  .standard-zoom {
+    display: none;
+  }
+  .projectname input {
+    width: 100%;
+    max-width: 170px;
+    font-size: 16px;
+    padding: 6px;
+  }
+  .zoom {
+    gap: 4px;
+  }
+  .zoom button {
+    min-width: 40px;
+    min-height: 44px;
+    padding: 4px;
+  }
+  .zoom span {
+    min-width: 30px;
+    text-align: center;
+  }
+  .canvas-area {
+    min-height: 0;
+    max-height: none;
+    flex: 1;
+    overscroll-behavior: contain;
+  }
+  .canvas-transform {
+    flex-shrink: 0;
+    padding: 12px;
+  }
+  .underbar {
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 10px;
+    flex-shrink: 0;
+    min-height: 32px;
+  }
+  .underbar > span:nth-child(3) {
+    display: none;
+  }
+  .underbar button {
+    min-height: 32px;
+    font-size: 11px;
+  }
+  .timeline-panel {
+    display: none;
+    position: fixed;
+    left: max(8px, env(safe-area-inset-left, 0px));
+    right: max(8px, env(safe-area-inset-right, 0px));
+    bottom: calc(var(--mobile-dock-height) + 24px + env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - var(--mobile-dock-height) - 100px - env(safe-area-inset-bottom, 0px));
+    overflow: auto;
+    background: #101a2c;
+    border: 1px solid #526a90;
+    border-radius: 14px;
+    z-index: 25;
+    box-shadow: 0 8px 40px #0009;
+    overscroll-behavior: contain;
+  }
+  .timeline-panel.is-open {
+    display: block;
+  }
+  .mobile-panel-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+  }
+  .mobile-panel-heading button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* パネル外をタップすると閉じられる背景。キャンバスの操作を一時的に遮る。 */
+  .mobile-panel-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    border: 0;
+    border-radius: 0;
+    background: #050a1280;
+    z-index: 20;
+  }
+  .mobile-panel-backdrop:hover {
+    background: #050a1280;
+  }
+  .mobile-editor-bar {
+    display: block;
+    flex-shrink: 0;
+    height: calc(var(--mobile-dock-height) + env(safe-area-inset-bottom, 0px));
+    padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
+    background: #121e31;
+    border-top: 1px solid #405574;
+    z-index: 30;
+  }
+  .mobile-colors {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 44px;
+  }
+  .mobile-current-color {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: 2px solid white;
+    border-radius: 50%;
+  }
+  .mobile-color-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 4px;
+  }
+  .mobile-color-strip button {
+    width: 36px;
+    height: 34px;
+    flex-shrink: 0;
+    padding: 0;
+    border-radius: 6px;
+  }
+  .mobile-color-strip .chosen {
+    outline: 2px solid white;
+    outline-offset: 2px;
+  }
+  .mobile-actions {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+    height: 56px;
+    align-items: center;
+  }
+  .mobile-actions button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 48px;
+    padding: 4px 0;
+    border-color: transparent;
+    background: transparent;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+  .mobile-actions button[aria-pressed='true'],
+  .mobile-actions button[aria-expanded='true'] {
+    background: #345bba;
+    border-color: #6c93ff;
+  }
+  .timeline {
+    padding: 8px;
+  }
+  .timeline button,
+  .timeline select,
+  .timeline input {
+    min-height: 44px;
+  }
+  footer {
+    flex-shrink: 0;
+    height: 20px;
+    padding: 3px 8px;
+    font-size: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dialog {
+    padding: 14px;
+  }
+  .quickimport {
+    display: none;
+  }
+}
+@media (max-width: 480px) {
+  .tools .toolgrid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .brand {
+    font-size: 14px;
+  }
+  .topactions .button {
+    font-size: 11px;
+  }
+  .cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 360px) {
+  .brand strong {
+    display: none;
+  }
+}
+/* 横向きスマホでは下部の色一覧を省き、さらに描画領域の高さを確保する。 */
+@media (max-height: 500px) and (pointer: coarse) {
+  .app {
+    --mobile-dock-height: 60px;
+  }
+  .top {
+    height: 44px;
+    min-height: 44px;
+  }
+  .mobile-colors,
+  .app > footer {
+    display: none;
+  }
+}
