@@ -16,15 +16,13 @@ import {
 import {
   getFirestore,
   doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  deleteDoc,
+  getDocsFromServer,
   collection,
   onSnapshot,
   runTransaction,
 } from 'firebase/firestore';
 import type { Project } from './model';
+import type { ProjectChange } from './storage';
 import type { SavedPalette } from './paletteSettings';
 import { isSavedPalette, palettesMatch } from './paletteSettings';
 // VITE_から始まる環境変数はViteがビルド時に埋め込む。接続情報の用意は.envで行う。
@@ -43,12 +41,19 @@ const app = configured ? (getApps()[0] ?? initializeApp(config)) : null;
 const auth = app ? getAuth(app) : null;
 const store = app ? getFirestore(app) : null;
 // 画面でログインを許可するメールを照合する。データへのアクセス制御はFirestoreルールも担当。
-export const allowed = (u: User | null) => !!u && u.email === import.meta.env.VITE_ALLOWED_EMAIL;
+export const allowed = (u: User | null) =>
+  !!u && u.emailVerified && u.email === import.meta.env.VITE_ALLOWED_EMAIL;
 // ログイン状態の変化を親へ通知し、戻り値で購読解除できるようにする。
 export const listen = (fn: (u: User | null) => void) =>
   auth ? onAuthStateChanged(auth, (u) => fn(allowed(u) ? u : null)) : () => {};
 // Google認証のポップアップを開く。許可されていないアカウントなら直後にログアウトする。
-export const login = async () => {
+const returnToProjectsKey = 'pixel-studio-return-to-projects';
+export const consumeProjectLoginReturn = () => {
+  const returning = sessionStorage.getItem(returnToProjectsKey) === 'true';
+  sessionStorage.removeItem(returnToProjectsKey);
+  return returning;
+};
+export const login = async (fromProjects = false) => {
   if (!auth) throw Error('Firebase設定が必要です');
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ login_hint: import.meta.env.VITE_ALLOWED_EMAIL });
@@ -57,7 +62,12 @@ export const login = async () => {
     window.matchMedia('(pointer: coarse)').matches &&
     window.location.hostname === config.authDomain
   ) {
-    await signInWithRedirect(auth, provider);
+    if (fromProjects) sessionStorage.setItem(returnToProjectsKey, 'true');
+    try {
+      await signInWithRedirect(auth, provider);
+    } finally {
+      if (fromProjects) sessionStorage.removeItem(returnToProjectsKey);
+    }
     return;
   }
   const r = await signInWithPopup(auth, provider);
@@ -77,21 +87,57 @@ export const completeRedirectLogin = async () => {
   }
 };
 export const logout = () => (auth ? signOut(auth) : Promise.resolve());
-// ユーザーごとの保存先：users/{ユーザーID}/projects/{作品ID}。
-const ref = (u: User, id: string) => doc(store!, 'users', u.uid, 'projects', id);
-// 作品が存在しない場合はnullを返す。同期側はこの結果と版番号を使って競合を判断する。
-export const cloudGet = async (u: User, id: string) => {
-  const d = await getDoc(ref(u, id));
-  return d.exists() ? (d.data() as Project) : null;
-};
-// 指定ユーザーのクラウド作品を一覧取得する。
+// アカウントごとの作品を取得する。削除の反映にも使うため、サーバーの応答を待つ。
+const projectCollection = (u: User) => collection(store!, 'users', u.uid, 'projects');
+type CloudProject = Project & { lastOperation?: string };
+const editableProject = ({ lastOperation: _lastOperation, ...project }: CloudProject): Project =>
+  project;
+
 export const cloudList = async (u: User) => {
-  const q = await getDocs(collection(store!, 'users', u.uid, 'projects'));
-  return q.docs.map((d) => d.data() as Project);
+  const snapshot = await getDocsFromServer(projectCollection(u));
+  return snapshot.docs.map((d) => editableProject(d.data() as CloudProject));
 };
-// setDocは同じ作品IDのドキュメントを更新し、なければ新規作成する。
-export const cloudPut = (u: User, p: Project) => setDoc(ref(u, p.id), p);
-export const cloudDelete = (u: User, id: string) => deleteDoc(ref(u, id));
+
+export const cloudApplyProject = (u: User, change: ProjectChange) =>
+  runTransaction(store!, async (transaction) => {
+    const projects = projectCollection(u);
+    const target = doc(projects, change.id);
+    const remote = (await transaction.get(target)).data() as CloudProject | undefined;
+    if (remote?.lastOperation === change.operationId) {
+      return { project: editableProject(remote) };
+    }
+    const conflict = remote
+      ? remote.revision !== change.baseRevision
+      : change.cloudRevision !== undefined;
+    if (change.action === 'delete') {
+      if (conflict && remote) return { project: editableProject(remote), conflict };
+      if (remote) transaction.delete(target);
+      return {};
+    }
+    if (!change.project) return {};
+    if (conflict) {
+      // 通信の切断で応答が届かなかった場合も、同じ操作で別のコピーを作らない。
+      const copyRef = doc(projects, change.operationId);
+      const previousCopy = (await transaction.get(copyRef)).data() as CloudProject | undefined;
+      if (previousCopy) {
+        return {
+          project: remote && editableProject(remote),
+          copy: editableProject(previousCopy),
+          conflict,
+        };
+      }
+      const copy = {
+        ...change.project,
+        id: change.operationId,
+        name: change.project.name + '（端末版・競合）',
+        revision: 0,
+      };
+      transaction.set(copyRef, { ...copy, lastOperation: change.operationId });
+      return { project: remote && editableProject(remote), copy, conflict };
+    }
+    transaction.set(target, { ...change.project, lastOperation: change.operationId });
+    return { project: change.project };
+  });
 
 // パレットは1件ずつ独立したドキュメントへ保存し、別の端末から追加しても衝突しにくくする。
 const paletteCollection = (u: User) => collection(store!, 'users', u.uid, 'palettes');

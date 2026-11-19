@@ -3,13 +3,20 @@
  */
 import type { StudioController } from '../hooks/usePixelStudio';
 import { Cloud, CloudOff, FolderOpen, Save, Download, Settings } from 'lucide-react';
-import { pending } from '../storage';
 import { ActionButton } from './ActionButton';
 type Props = Pick<
   StudioController,
-  'online' | 'user' | 'setLibrary' | 'save' | 'setExportDialog' | 'setSettings'
+  'online' | 'user' | 'pendingCount' | 'openLibrary' | 'save' | 'setExportDialog' | 'setSettings'
 >;
-export function AppHeader({ online, user, setLibrary, save, setExportDialog, setSettings }: Props) {
+export function AppHeader({
+  online,
+  user,
+  pendingCount,
+  openLibrary,
+  save,
+  setExportDialog,
+  setSettings,
+}: Props) {
   return (
     <header className="top">
       <div className="brand">
@@ -21,13 +28,9 @@ export function AppHeader({ online, user, setLibrary, save, setExportDialog, set
         <span className="save-status">
           {online ? <Cloud size={15} /> : <CloudOff size={15} />}{' '}
           {user ? 'クラウド接続' : 'ローカル'}{' '}
-          {pending().length > 0 ? `・同期待ち ${pending().length}` : ''}
+          {pendingCount > 0 ? `・同期待ち ${pendingCount}` : ''}
         </span>
-        <ActionButton
-          label="作品一覧"
-          onClick={() => setLibrary(true)}
-          icon={<FolderOpen size={17} />}
-        />
+        <ActionButton label="作品一覧" onClick={openLibrary} icon={<FolderOpen size={17} />} />
         <ActionButton label="保存" onClick={() => save()} icon={<Save size={17} />} />
         <ActionButton label="別名保存" onClick={() => save(true)} />
         <ActionButton

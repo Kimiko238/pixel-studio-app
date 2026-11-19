@@ -28,7 +28,8 @@ export default function App() {
       <AppHeader
         online={studio.online}
         user={studio.user}
-        setLibrary={studio.setLibrary}
+        pendingCount={studio.pendingCount}
+        openLibrary={studio.openLibrary}
         save={studio.save}
         setExportDialog={studio.setExportDialog}
         setSettings={studio.setSettings}
@@ -98,7 +99,8 @@ export default function App() {
             pointerDown={studio.pointerDown}
             pointerMove={studio.pointerMove}
             pointerUp={studio.pointerUp}
-            setDrag={studio.setDrag}
+            pointerCancel={studio.pointerCancel}
+            tool={studio.tool}
             selection={studio.selection}
             cursor={studio.cursor}
             dirty={studio.dirty}
@@ -140,6 +142,10 @@ export default function App() {
         setColor={studio.setColor}
         tool={studio.tool}
         setTool={studio.setTool}
+        selection={studio.selection}
+        moveSelection={studio.moveSelection}
+        clearSelection={studio.clearSelection}
+        flipView={studio.flipView}
         undo={studio.undo}
         redo={studio.redo}
         panel={mobilePanel}
@@ -168,8 +174,11 @@ export default function App() {
           sort={studio.sort}
           setSort={studio.setSort}
           user={studio.user}
-          refresh={studio.refresh}
-          setStatus={studio.setStatus}
+          online={studio.online}
+          projectCloudState={studio.projectCloudState}
+          redirectLoginError={studio.redirectLoginError}
+          pendingCount={studio.pendingCount}
+          syncProjects={studio.syncProjects}
           filtered={studio.filtered}
           openProject={studio.openProject}
           rename={studio.rename}

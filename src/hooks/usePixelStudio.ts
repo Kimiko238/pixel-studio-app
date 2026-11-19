@@ -21,28 +21,51 @@ import {
   nearestColor,
   fileName,
 } from '../model';
-import { listLocal, putLocal, deleteLocal, pending, enqueue, dequeue } from '../storage';
+import {
+  listLocal,
+  stageProject,
+  pendingProjects,
+  finishProjectSync,
+  mergeCloudProjects,
+} from '../storage';
 import {
   configured,
   listen,
   completeRedirectLogin,
-  cloudGet,
-  cloudPut,
-  cloudDelete,
+  consumeProjectLoginReturn,
+  cloudApplyProject,
+  cloudList,
 } from '../cloud';
 import type { User } from 'firebase/auth';
 import { GIFEncoder, quantize, applyPalette } from 'gifenc';
 
 import type { Tool, Selection } from '../tools';
-import { px, points, mutate, fill, bytes } from '../utils/drawing';
+import {
+  px,
+  points,
+  mutate,
+  fill,
+  bytes,
+  moveSelectionPixels,
+  selectionContentBounds,
+} from '../utils/drawing';
 import { loadSharedPalette } from '../paletteSettings';
 import { usePaletteLibrary } from './usePaletteLibrary';
+type SelectionGesture = {
+  pointerId: number;
+  x: number;
+  y: number;
+  frame: Frame;
+  previousSelection: Selection | null;
+  move: { area: Selection; bounds: Selection } | null;
+};
+
 export function usePixelStudio() {
   // useStateは画面に反映したい値を保持する。setProjectで更新するとReactが再描画する。
   // 初期化関数は初回に使われ、前回の作業用パレットを持つ空の作品を作る。
   const [project, setProject] = useState<Project>(() => ({
     ...createProject(),
-    palette: loadSharedPalette() ?? [...COLORS],
+    palette: loadSharedPalette(),
   }));
   const [user, setUser] = useState<User | null>(null);
   const [online, setOnline] = useState(navigator.onLine);
@@ -57,11 +80,18 @@ export function usePixelStudio() {
     paletteCloudError,
     retryPaletteCloud,
   } = usePaletteLibrary(project, user, online);
+  const [projectCloudState, setProjectCloudState] = useState<
+    'idle' | 'syncing' | 'synced' | 'error'
+  >('idle');
+  const [pendingCount, setPendingCount] = useState(0);
+  const [redirectLoginError, setRedirectLoginError] = useState('');
+  const syncTask = useRef(Promise.resolve());
+  const activeUser = useRef<User | null>(null);
   const [saved, setSaved] = useState<Project[]>([]);
   const [frameIndex, setFrameIndex] = useState(0);
   // 描画に関する状態。実際のピクセル配列はprojectに、拡大率や表示反転は別の状態に持つ。
   const [tool, setTool] = useState<Tool>('pencil');
-  const [color, setColor] = useState(project.palette[8] ?? project.palette[0] ?? COLORS[8]);
+  const [color, setColor] = useState(project.palette[8] ?? project.palette[0] ?? COLORS[0]);
   const [zoom, setZoom] = useState(24);
   const [grid, setGrid] = useState(true);
   const [symH, setSymH] = useState(false);
@@ -69,6 +99,12 @@ export function usePixelStudio() {
   const [onion, setOnion] = useState(false);
   const [flipView, setFlipView] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const selectionGesture = useRef<SelectionGesture | null>(null);
+  const [selectionPreview, setSelectionPreview] = useState<{
+    frame: Frame;
+    area: Selection;
+    pixels: string[];
+  } | null>(null);
   const [clipboard, setClipboard] = useState<{ pixels: string[]; w: number; h: number } | null>(
     null,
   );
@@ -155,7 +191,7 @@ export function usePixelStudio() {
     const prev = history.at(-1)!;
     setFuture((f) => [...f, project]);
     setHistory((h) => h.slice(0, -1));
-    setProject(prev);
+    setProject({ ...prev, revision: project.revision });
     setDirty(true);
   }, [history, project]);
   // Redo：futureから作品を戻し、現在の作品をhistoryへ積み直す。
@@ -164,14 +200,16 @@ export function usePixelStudio() {
     const next = future.at(-1)!;
     setHistory((h) => [...h, project]);
     setFuture((f) => f.slice(0, -1));
-    setProject(next);
+    setProject({ ...next, revision: project.revision });
     setDirty(true);
   }, [future, project]);
   // IndexedDBから保存済み作品を読み直す。編集画面のprojectとは別の一覧用データ。
   const refresh = useCallback(async () => {
     try {
-      setSaved(await listLocal());
-    } catch (e) {
+      const { saved, waiting } = await listLocal();
+      setSaved(saved);
+      setPendingCount(waiting);
+    } catch {
       setStatus('保存一覧を読み込めませんでした');
     }
   }, []);
@@ -180,12 +218,18 @@ export function usePixelStudio() {
     // listenの戻り値を返すことで、画面破棄時に監視を解除できる。
     refresh();
     if (configured) {
-      void completeRedirectLogin().catch(() =>
-        setStatus(
-          'Googleログインを完了できませんでした。指定したアカウントでもう一度お試しください。',
-        ),
-      );
-      return listen(setUser);
+      if (consumeProjectLoginReturn()) setLibrary(true);
+      void completeRedirectLogin().catch(() => {
+        const message =
+          'Googleログインを完了できませんでした。指定したアカウントでもう一度お試しください。';
+        setRedirectLoginError(message);
+        setStatus(message);
+      });
+      return listen((next) => {
+        activeUser.current = next;
+        setUser(next);
+        if (!next) setProjectCloudState('idle');
+      });
     }
   }, [refresh]);
   useEffect(() => {
@@ -210,47 +254,51 @@ export function usePixelStudio() {
     window.addEventListener('beforeunload', fn);
     return () => window.removeEventListener('beforeunload', fn);
   }, []);
-  // 同期待ちキューを順に処理する。ログイン・通信接続の両方が必要。
-  // baseRevisionとクラウドの版番号を比較し、他端末との競合時はデータを残す方へ処理する。
-  const sync = useCallback(async () => {
+  const syncProjects = useCallback(() => {
     if (!user || !navigator.onLine) return;
-    for (const item of pending()) {
+    const sync = async () => {
+      if (activeUser.current !== user || !navigator.onLine) return;
+      setProjectCloudState('syncing');
+      let failed = false;
       try {
-        const remote = await cloudGet(user, item.id);
-        if (item.action === 'delete') {
-          if (remote && remote.revision > item.baseRevision) {
-            setStatus('削除の競合を検出しました。クラウド版を残しています');
-            const local = await listLocal();
-            if (!local.some((p) => p.id === remote.id)) await putLocal(remote);
-          } else await cloudDelete(user, item.id);
-        } else {
-          const local = (await listLocal()).find((p) => p.id === item.id);
-          if (local) {
-            if (remote && remote.revision > item.baseRevision) {
-              // クラウド側が更新済みなら、端末版に新しいIDを付けて両方の作品を残す。
-              const keep = clone(local);
-              keep.id = uid();
-              keep.name += '（端末版・競合）';
-              keep.revision = 0;
-              await putLocal(keep);
-              await cloudPut(user, keep);
-              await putLocal(remote);
-              setStatus('競合を検出：両方保存しました。作品一覧で比較してください');
-            } else await cloudPut(user, local);
+        for (const change of await pendingProjects()) {
+          if (activeUser.current !== user || !navigator.onLine) return;
+          try {
+            const result = await cloudApplyProject(user, change);
+            await finishProjectSync(change, result);
+            if (result.copy) setStatus('別端末で変更されたため、作品一覧に両方の版を残しました');
+            else if (result.conflict)
+              setStatus('別端末で更新された作品があるため、クラウド版を残しました');
+          } catch {
+            // 送信できなかった操作は残し、他の作品の同期は続ける。
+            failed = true;
           }
         }
-        // 成功した項目だけキューから外す。途中で失敗した場合はcatchで止まり、後で再送する。
-        dequeue(item.id);
-      } catch (e) {
-        setStatus('同期待ち：通信または権限を確認してください');
-        break;
+        if (activeUser.current !== user || !navigator.onLine) return;
+        const remote = await cloudList(user);
+        if (activeUser.current !== user) return;
+        await mergeCloudProjects(remote);
+      } catch {
+        failed = true;
+      } finally {
+        await refresh();
+        if (activeUser.current === user) setProjectCloudState(failed ? 'error' : 'synced');
       }
-    }
-    await refresh();
+    };
+    syncTask.current = syncTask.current
+      .then(async () => {
+        if (navigator.locks) await navigator.locks.request('pixel-studio-project-sync', sync);
+        else await sync();
+      })
+      .catch(() => setProjectCloudState('error'));
   }, [user, refresh]);
+  const openLibrary = () => {
+    setLibrary(true);
+    syncProjects();
+  };
   useEffect(() => {
-    sync();
-  }, [sync, online]);
+    if (online) syncProjects();
+  }, [syncProjects, online]);
   // 作品の手動保存。まずIndexedDBへ保存し、その後クラウド送信用のキューへ登録する。
   // asNew=trueでは新しい作品IDを発行し、元の作品を上書きしない。
   const save = async (asNew = false) => {
@@ -266,18 +314,20 @@ export function usePixelStudio() {
       p.updated = Date.now();
       if (bytes(p) > 500_000)
         alert('この作品は容量が大きくなっています。保存容量にご注意ください。');
-      await putLocal(p);
-      enqueue({
-        id: p.id,
-        action: 'save',
-        baseRevision: asNew ? 0 : project.revision,
-        at: Date.now(),
-      });
-      setProject(p);
-      setDirty(false);
-      setStatus('ブラウザに保存しました' + (user ? '（クラウド同期待ち）' : ''));
+      p = await stageProject(p, asNew ? 0 : project.revision, 'save');
+      if (projectRef.current === project) {
+        setProject(p);
+        setDirty(false);
+      } else if (!asNew && projectRef.current.id === project.id) {
+        setProject((current) =>
+          current.id === p.id && current.revision < p.revision
+            ? { ...current, revision: p.revision }
+            : current,
+        );
+      }
+      setStatus('端末に保存しました');
       await refresh();
-      if (user && online) await sync();
+      syncProjects();
     } catch (e) {
       alert('保存に失敗しました: ' + String(e));
     }
@@ -296,45 +346,57 @@ export function usePixelStudio() {
   // 端末内で作品を削除し、クラウドの削除はキューを通して反映する。
   const remove = async (p: Project) => {
     if (!confirm(`「${p.name}」を完全削除しますか？\nこの操作は取り消せません。`)) return;
-    await deleteLocal(p.id);
-    enqueue({ id: p.id, action: 'delete', baseRevision: p.revision, at: Date.now() });
-    await refresh();
-    if (user && online) await sync();
-    setStatus('作品を削除しました');
+    try {
+      await stageProject(p, p.revision, 'delete');
+      setStatus('作品を削除しました');
+      await refresh();
+      syncProjects();
+    } catch {
+      setStatus('作品を削除できませんでした');
+    }
   };
-  // 元データを複製して別IDで保存する。IDを変えることで独立した作品として扱える。
-  const duplicate = async (p: Project) => {
-    const c = clone(p);
-    c.id = uid();
-    c.name += ' コピー';
-    c.updated = Date.now();
-    c.revision = 0;
-    await putLocal(c);
-    enqueue({ id: c.id, action: 'save', baseRevision: 0, at: Date.now() });
-    await refresh();
-    if (user && online) await sync();
+  const saveLibraryChange = async (p: Project, baseRevision: number) => {
+    try {
+      const saved = await stageProject(p, baseRevision, 'save');
+      await refresh();
+      syncProjects();
+      return saved;
+    } catch {
+      setStatus('作品を保存できませんでした');
+      return null;
+    }
   };
-  // 名前を変更した作品を保存し、編集画面で同じ作品を開いている場合は表示も更新する。
+  // 元データを複製して別の作品として保存する。
+  const duplicate = (p: Project) =>
+    saveLibraryChange(
+      { ...clone(p), id: uid(), name: p.name + ' コピー', updated: Date.now(), revision: 0 },
+      0,
+    );
   const rename = async (p: Project) => {
     const name = prompt('作品名を変更', p.name);
     if (!name) return;
-    const c = { ...p, name, updated: Date.now(), revision: p.revision + 1 };
-    await putLocal(c);
-    enqueue({ id: c.id, action: 'save', baseRevision: p.revision, at: Date.now() });
-    await refresh();
-    if (project.id === p.id) setProject(c);
-    if (user && online) await sync();
+    const next = { ...p, name, updated: Date.now(), revision: p.revision + 1 };
+    const saved = await saveLibraryChange(next, p.revision);
+    if (saved) {
+      setProject((current) =>
+        current.id === p.id && current.revision === p.revision
+          ? { ...current, name, updated: next.updated, revision: saved.revision }
+          : current,
+      );
+    }
   };
-  // フォルダは作品データ内の文字列。実際のディスク上にディレクトリを作る処理ではない。
   const changeFolder = async (p: Project) => {
-    const f = prompt('フォルダ名（新しい名前でも可）', p.folder);
-    if (f === null) return;
-    const c = { ...p, folder: f || '未分類', updated: Date.now(), revision: p.revision + 1 };
-    await putLocal(c);
-    enqueue({ id: c.id, action: 'save', baseRevision: p.revision, at: Date.now() });
-    await refresh();
-    if (project.id === p.id) setProject(c);
-    if (user && online) await sync();
+    const name = prompt('フォルダ名（新しい名前でも可）', p.folder);
+    if (name === null) return;
+    const next = { ...p, folder: name || '未分類', updated: Date.now(), revision: p.revision + 1 };
+    const saved = await saveLibraryChange(next, p.revision);
+    if (saved) {
+      setProject((current) =>
+        current.id === p.id && current.revision === p.revision
+          ? { ...current, folder: next.folder, updated: next.updated, revision: saved.revision }
+          : current,
+      );
+    }
   };
   // 入力した寸法を検証して空の作品を作る。色はパレットライブラリの作業用コピーを引き継ぐ。
   const newProject = () => {
@@ -346,9 +408,9 @@ export function usePixelStudio() {
       return;
     }
     const next = createProject('無題の作品', w, h);
-    next.palette = [...(sharedPalette ?? COLORS)];
+    next.palette = [...sharedPalette];
     setProject(next);
-    setColor(next.palette[0] ?? COLORS[8]);
+    setColor(next.palette[0] ?? COLORS[0]);
     setFrameIndex(0);
     setHistory([]);
     setFuture([]);
@@ -501,6 +563,11 @@ export function usePixelStudio() {
       return p;
     });
   };
+  const clearSelection = () => {
+    selectionGesture.current = null;
+    setSelectionPreview(null);
+    setSelection(null);
+  };
   // 選択範囲をアプリ内のクリップボードへコピーする。OSのクリップボードとは別の状態。
   const copySelection = () => {
     if (!selection) return;
@@ -532,24 +599,10 @@ export function usePixelStudio() {
   // 選択範囲の元の位置を消してから移動先へ描き、選択枠の位置も一緒に更新する。
   const moveSelection = (dx: number, dy: number) => {
     if (!selection) return;
-    const { x, y, w, h } = selection,
-      next = [...active.pixels],
-      clip = Array.from(
-        { length: w * h },
-        (_, i) => active.pixels[(y + Math.floor(i / w)) * project.width + x + (i % w)],
-      );
-    for (let j = 0; j < h; j++)
-      for (let i = 0; i < w; i++) {
-        const at = px(x + i, y + j, project.width, project.height);
-        if (at >= 0) next[at] = '';
-      }
-    for (let j = 0; j < h; j++)
-      for (let i = 0; i < w; i++) {
-        const at = px(x + i + dx, y + j + dy, project.width, project.height);
-        if (at >= 0) next[at] = clip[j * w + i];
-      }
-    editPixels(next);
-    setSelection({ x: x + dx, y: y + dy, w, h });
+    editPixels(
+      moveSelectionPixels(active.pixels, selection, dx, dy, project.width, project.height),
+    );
+    setSelection({ ...selection, x: selection.x + dx, y: selection.y + dy });
   };
   // 選択範囲の中だけ左右を入れ替える。キャンバス全体の反転とは別の操作。
   const flipSelection = () => {
@@ -701,6 +754,9 @@ export function usePixelStudio() {
       alert('書き出し失敗: ' + String(e));
     }
   };
+  const previewedMove =
+    tool === 'select' && selectionPreview?.frame === active ? selectionPreview : null;
+  const canvasPixels = previewedMove?.pixels ?? active.pixels;
   // Reactの状態をHTML canvasへ反映する。必要なら1つ前のコマを薄く重ねてから現在のコマを描く。
   const drawPreview = useCallback(() => {
     const c = canvasRef.current;
@@ -716,8 +772,8 @@ export function usePixelStudio() {
       ctx.drawImage(canvasFromPixels(anim.frames[frameIndex - 1].pixels, w, h), 0, 0);
       ctx.globalAlpha = 1;
     }
-    ctx.drawImage(canvasFromPixels(active.pixels, w, h), 0, 0);
-  }, [project, anim, active, frameIndex, onion]);
+    ctx.drawImage(canvasFromPixels(canvasPixels, w, h), 0, 0);
+  }, [project, anim, canvasPixels, frameIndex, onion]);
   // 依存する作品や選択コマが変わったあとに、canvasへの描画処理を実行する。
   useEffect(drawPreview, [drawPreview]);
   // 画面上のポインター位置を、拡大表示前のドット座標へ変換する。表示反転時はX座標も逆にする。
@@ -727,21 +783,82 @@ export function usePixelStudio() {
       y = Math.floor(((e.clientY - r.top) / r.height) * project.height);
     return { x: flipView ? project.width - 1 - x : x, y };
   };
+  const dragSelection = (gesture: SelectionGesture, x: number, y: number, finish: boolean) => {
+    const { width, height } = project;
+    const limit = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+    if (gesture.move) {
+      const { area, bounds } = gesture.move;
+      const dx = limit(x - gesture.x, -bounds.x, width - bounds.x - bounds.w);
+      const dy = limit(y - gesture.y, -bounds.y, height - bounds.y - bounds.h);
+      if (!dx && !dy) {
+        setSelectionPreview(null);
+        return;
+      }
+      const left = Math.max(0, area.x + dx);
+      const top = Math.max(0, area.y + dy);
+      const destination = {
+        x: left,
+        y: top,
+        w: Math.min(width, area.x + area.w + dx) - left,
+        h: Math.min(height, area.y + area.h + dy) - top,
+      };
+      const pixels = moveSelectionPixels(gesture.frame.pixels, area, dx, dy, width, height);
+      if (finish) {
+        editPixels(pixels);
+        setSelection(destination);
+      } else {
+        setSelectionPreview({ frame: gesture.frame, area: destination, pixels });
+      }
+    } else {
+      const endX = limit(x, 0, width - 1);
+      const endY = limit(y, 0, height - 1);
+      setSelection({
+        x: Math.min(gesture.x, endX),
+        y: Math.min(gesture.y, endY),
+        w: Math.abs(endX - gesture.x) + 1,
+        h: Math.abs(endY - gesture.y) + 1,
+      });
+    }
+  };
   // 押した瞬間：操作の開始位置を記録し、ツールに応じて描画・色取得・塗りつぶしを始める。
   // PointerEventなので、マウス・指・ペンを同じ処理で扱える。
   const pointerDown = (e: React.PointerEvent) => {
+    if (!e.isPrimary || e.button !== 0) return;
     e.preventDefault();
     // canvasの外へ指が動いても、この操作の移動・終了イベントを受け取れるようにする。
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     const { x, y } = getPos(e);
     setCursor({ x, y });
+    if (tool === 'select') {
+      const inside =
+        selection &&
+        x >= selection.x &&
+        x < selection.x + selection.w &&
+        y >= selection.y &&
+        y < selection.y + selection.h;
+      const bounds =
+        inside && selectionContentBounds(active.pixels, selection, project.width, project.height);
+      const move = inside ? { area: selection, bounds: bounds || selection } : null;
+      const gesture = {
+        pointerId: e.pointerId,
+        x,
+        y,
+        frame: active,
+        previousSelection: selection,
+        move,
+      };
+      selectionGesture.current = gesture;
+      setPlaying(false);
+      if (!move) dragSelection(gesture, x, y, false);
+      return;
+    }
     setDrag({ x, y, pixels: [...active.pixels], panX: e.clientX, panY: e.clientY });
     if (tool === 'picker') {
       const c = active.pixels[px(x, y, project.width, project.height)];
       if (c) setColor(c);
       return;
     }
-    if (tool === 'pan' || tool === 'select') return;
+    if (tool === 'pan') return;
     if (tool === 'bucket') {
       editPixels(fill(active.pixels, x, y, project.width, project.height, color));
       return;
@@ -765,8 +882,14 @@ export function usePixelStudio() {
   // 移動中：ペンは前の位置と現在地を線で結び、素早く動かしたときの描き漏れを防ぐ。
   // 図形ツールは開始時のピクセルから毎回プレビューを作り、まだ履歴には確定しない。
   const pointerMove = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
     const { x, y } = getPos(e);
     setCursor({ x, y });
+    const gesture = selectionGesture.current;
+    if (gesture?.pointerId === e.pointerId) {
+      if (tool === 'select' && gesture.frame === active) dragSelection(gesture, x, y, false);
+      return;
+    }
     if (!drag) return;
     if (tool === 'pan') {
       setPan((p) => ({ x: p.x + e.clientX - drag.panX, y: p.y + e.clientY - drag.panY }));
@@ -788,15 +911,6 @@ export function usePixelStudio() {
       setDrag({ ...drag, x, y });
       return;
     }
-    if (tool === 'select') {
-      setSelection({
-        x: Math.min(drag.x, x),
-        y: Math.min(drag.y, y),
-        w: Math.abs(x - drag.x) + 1,
-        h: Math.abs(y - drag.y) + 1,
-      });
-      return;
-    }
     if (tool === 'line' || tool === 'rect' || tool === 'fillrect' || tool === 'ellipse') {
       const ids = points(tool, drag.x, drag.y, x, y, project.width, project.height);
       const out = mutate(drag.pixels, ids, color, project.width, project.height, symH, symV);
@@ -809,6 +923,17 @@ export function usePixelStudio() {
   };
   // 離した瞬間：図形のプレビューを開始前の状態に戻してから、commit経由で完成形を確定する。
   const pointerUp = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
+    const gesture = selectionGesture.current;
+    if (gesture?.pointerId === e.pointerId) {
+      selectionGesture.current = null;
+      setSelectionPreview(null);
+      if (tool === 'select' && gesture.frame === active) {
+        const { x, y } = getPos(e);
+        dragSelection(gesture, x, y, true);
+      }
+      return;
+    }
     if (!drag) return;
     if (['line', 'rect', 'fillrect', 'ellipse'].includes(tool)) {
       const { x, y } = getPos(e);
@@ -820,6 +945,16 @@ export function usePixelStudio() {
         return q;
       });
       editPixels(out);
+    }
+    setDrag(null);
+  };
+  const pointerCancel = (e: React.PointerEvent) => {
+    if (!e.isPrimary) return;
+    const gesture = selectionGesture.current;
+    if (gesture?.pointerId === e.pointerId) {
+      selectionGesture.current = null;
+      setSelectionPreview(null);
+      if (gesture.frame === active) setSelection(gesture.previousSelection);
     }
     setDrag(null);
   };
@@ -933,6 +1068,7 @@ export function usePixelStudio() {
     online,
     user,
     setLibrary,
+    openLibrary,
     save,
     setExportDialog,
     setSettings,
@@ -944,6 +1080,7 @@ export function usePixelStudio() {
     copySelection,
     paste,
     moveSelection,
+    clearSelection,
     flipSelection,
     replaceColor,
     symH,
@@ -972,8 +1109,8 @@ export function usePixelStudio() {
     pointerDown,
     pointerMove,
     pointerUp,
-    setDrag,
-    selection,
+    pointerCancel,
+    selection: previewedMove?.area ?? selection,
     cursor,
     dirty,
     setPreview,
@@ -999,8 +1136,10 @@ export function usePixelStudio() {
     folders,
     sort,
     setSort,
-    refresh,
-    setStatus,
+    projectCloudState,
+    redirectLoginError,
+    pendingCount,
+    syncProjects,
     filtered,
     openProject,
     rename,

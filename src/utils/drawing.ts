@@ -1,7 +1,7 @@
 /**
  * 描画用の計算処理。DOMやReactに依存せず、座標と配列を受け取って結果を返す。
  */
-import type { Tool } from '../tools';
+import type { Selection, Tool } from '../tools';
 import type { Project } from '../model';
 // 2次元座標を1次元配列の添字へ変換する。例：幅16の(2,3)は3*16+2=50。範囲外は-1。
 export const px = (x: number, y: number, w: number, h: number) =>
@@ -120,6 +120,51 @@ export const fill = (src: string[], x: number, y: number, w: number, h: number, 
       }
   }
   return a;
+};
+// 選択範囲を切り取って貼り付ける。重なる場合も移動前の画像から色を読む。
+export const moveSelectionPixels = (
+  pixels: string[],
+  area: Selection,
+  dx: number,
+  dy: number,
+  width: number,
+  height: number,
+) => {
+  const next = [...pixels];
+  const { x, y, w, h } = area;
+  for (let row = y; row < y + h; row++)
+    for (let col = x; col < x + w; col++) {
+      const at = px(col, row, width, height);
+      if (at >= 0) next[at] = '';
+    }
+  for (let row = y; row < y + h; row++)
+    for (let col = x; col < x + w; col++) {
+      const at = px(col + dx, row + dy, width, height);
+      if (at >= 0) next[at] = pixels[px(col, row, width, height)] ?? '';
+    }
+  return next;
+};
+
+// 透明な余白はキャンバスの外へ出せるよう、色のあるピクセルで移動範囲を決める。
+export const selectionContentBounds = (
+  pixels: string[],
+  { x, y, w, h }: Selection,
+  width: number,
+  height: number,
+): Selection | null => {
+  let left = width,
+    right = -1,
+    top = height,
+    bottom = -1;
+  for (let row = Math.max(0, y); row < Math.min(y + h, height); row++)
+    for (let col = Math.max(0, x); col < Math.min(x + w, width); col++) {
+      if (!pixels[row * width + col]) continue;
+      left = Math.min(left, col);
+      right = Math.max(right, col);
+      top = Math.min(top, row);
+      bottom = Math.max(bottom, row);
+    }
+  return right >= left ? { x: left, y: top, w: right - left + 1, h: bottom - top + 1 } : null;
 };
 // 作品をJSONにしたときのおおよそのバイト数。画像の画素数だけでなく全データを含む。
 export const bytes = (p: Project) => new Blob([JSON.stringify(p)]).size;

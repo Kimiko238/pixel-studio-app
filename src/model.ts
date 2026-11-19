@@ -26,7 +26,7 @@ export type Project = {
   updated: number;
   revision: number;
 };
-// Pyxelの標準16色。初期パレットと、書き出し時の色変換の基準に使う。
+// Pyxelの標準16色。パレットの切り替えと、書き出し時の色変換に使う。
 export const COLORS = [
   '#000000',
   '#1d2b53',
@@ -44,6 +44,34 @@ export const COLORS = [
   '#83769c',
   '#ff77a8',
   '#ffccaa',
+];
+// 標準256色（xterm互換）。基本16色＋6×6×6のRGB立方体216色＋グレー24段階。
+const hex2 = (v: number) => v.toString(16).padStart(2, '0');
+const rgb = (r: number, g: number, b: number) => `#${hex2(r)}${hex2(g)}${hex2(b)}`;
+const CUBE_LEVELS = [0, 95, 135, 175, 215, 255];
+export const COLORS_256 = [
+  ...[
+    '#000000',
+    '#800000',
+    '#008000',
+    '#808000',
+    '#000080',
+    '#800080',
+    '#008080',
+    '#c0c0c0',
+    '#808080',
+    '#ff0000',
+    '#00ff00',
+    '#ffff00',
+    '#0000ff',
+    '#ff00ff',
+    '#00ffff',
+    '#ffffff',
+  ],
+  ...Array.from({ length: 216 }, (_, i) =>
+    rgb(CUBE_LEVELS[Math.floor(i / 36)], CUBE_LEVELS[Math.floor(i / 6) % 6], CUBE_LEVELS[i % 6]),
+  ),
+  ...Array.from({ length: 24 }, (_, i) => rgb(8 + i * 10, 8 + i * 10, 8 + i * 10)),
 ];
 // 作品・アニメーション・コマを、名前が同じでも区別できるようにする。
 export const uid = () => crypto.randomUUID();
@@ -70,7 +98,7 @@ export const createProject = (name = '無題の作品', w = 16, h = 16): Project
     height: h,
     animations: [a],
     activeAnimation: a.id,
-    palette: [...COLORS],
+    palette: [...COLORS_256],
     updated: Date.now(),
     revision: 0,
   };

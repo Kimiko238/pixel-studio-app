@@ -1,7 +1,7 @@
 /**
  * パレット設定の保存形式・検証・旧データ移行。作品本体の保存とは独立している。
  */
-import { COLORS } from './model';
+import { COLORS, COLORS_256 } from './model';
 
 // 現在の保存形式と、1つの共通パレットだけを保存していた旧形式のキー。
 const KEY = 'pixel-palette-library';
@@ -72,13 +72,33 @@ export function mergeCloudPaletteLibrary(
   return changed ? { ...local, activeId, palettes } : local;
 }
 
-// 保存内容を検証して復元する。新形式がなければ旧形式を移行し、未保存なら標準16色を用意する。
+const standard16Id = 'default';
+const standard256Id = 'standard-256';
+
+function ensureStandard256(palettes: SavedPalette[]) {
+  const existing = palettes.find(
+    (palette) => palette.id.startsWith(standard256Id) && palettesMatch(palette.colors, COLORS_256),
+  );
+  if (existing) return { palettes, standard256: existing };
+
+  let id = standard256Id;
+  let name = '標準256色';
+  for (let suffix = 2; palettes.some((palette) => palette.id === id); suffix++)
+    id = `${standard256Id}-${suffix}`;
+  for (let suffix = 2; palettes.some((palette) => palette.name === name); suffix++)
+    name = `標準256色（${suffix}）`;
+  const standard256 = { id, name, colors: [...COLORS_256] };
+  return { palettes: [...palettes, standard256], standard256 };
+}
+
+// 保存内容を復元する。以前の標準16色をそのまま使用中なら標準256色へ切り替える。
 export function loadPaletteLibrary(): PaletteLibrary {
-  const standard: SavedPalette = { id: 'default', name: '標準16色', colors: [...COLORS] };
+  const standard16 = { id: standard16Id, name: '標準16色', colors: [...COLORS] };
+  const { palettes: builtins, standard256 } = ensureStandard256([standard16]);
   const fallback: PaletteLibrary = {
-    palettes: [standard],
-    activeId: standard.id,
-    draft: [...COLORS],
+    palettes: builtins,
+    activeId: standard256.id,
+    draft: [...standard256.colors],
   };
   try {
     const value = JSON.parse(localStorage.getItem(KEY) ?? 'null');
@@ -99,12 +119,20 @@ export function loadPaletteLibrary(): PaletteLibrary {
       value.palettes.some((p: SavedPalette) => p.id === value.activeId) &&
       isColors(value.draft)
     ) {
-      return value;
+      const { palettes, standard256 } = ensureStandard256(value.palettes);
+      if (
+        value.version === undefined &&
+        value.activeId === standard16Id &&
+        palettesMatch(value.draft, COLORS)
+      ) {
+        return { palettes, activeId: standard256.id, draft: [...standard256.colors] };
+      }
+      return { palettes, activeId: value.activeId, draft: value.draft };
     }
     const legacy: unknown = JSON.parse(localStorage.getItem(LEGACY_KEY) ?? 'null');
     if (isColors(legacy)) {
       const previous = { id: 'legacy', name: '以前の共通パレット', colors: [...legacy] };
-      return { palettes: [standard, previous], activeId: previous.id, draft: [...legacy] };
+      return { palettes: [...builtins, previous], activeId: previous.id, draft: [...legacy] };
     }
   } catch {
     // JSONの破損やブラウザ保存の制限があっても、標準色で編集を始められるようにする。
@@ -114,7 +142,8 @@ export function loadPaletteLibrary(): PaletteLibrary {
 
 // 一覧・選択中ID・作業用の色を1つのJSONにまとめて保存する。失敗は呼び出し元で表示する。
 export function storePaletteLibrary(library: PaletteLibrary) {
-  localStorage.setItem(KEY, JSON.stringify(library));
+  // バージョンを記録し、更新後に選び直した16色を次回も復元する。
+  localStorage.setItem(KEY, JSON.stringify({ ...library, version: 2 }));
 }
 
 // 起動時の作品に使うのは、最後に保持した作業用コピーの色。

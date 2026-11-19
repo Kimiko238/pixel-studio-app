@@ -4,6 +4,7 @@
  */
 import type { StudioController } from '../hooks/usePixelStudio';
 import { canvasFromPixels } from '../model';
+import { PyxelPaletteExport } from './PyxelPaletteExport';
 type Props = Pick<
   StudioController,
   | 'setExportDialog'
@@ -91,6 +92,7 @@ export function ExportDialog({
           <button onClick={() => exportNow('sheet')}>スプライトシート</button>
           <button onClick={() => exportNow('gif')}>GIF</button>
           <button onClick={() => exportNow('json')}>JSON</button>
+          <PyxelPaletteExport project={project} />
         </div>
       </div>
     </div>

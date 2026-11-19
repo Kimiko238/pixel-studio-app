@@ -23,7 +23,8 @@ type Props = Pick<
   | 'pointerDown'
   | 'pointerMove'
   | 'pointerUp'
-  | 'setDrag'
+  | 'pointerCancel'
+  | 'tool'
   | 'selection'
   | 'cursor'
   | 'dirty'
@@ -45,7 +46,8 @@ export function CanvasEditor({
   pointerDown,
   pointerMove,
   pointerUp,
-  setDrag,
+  pointerCancel,
+  tool,
   selection,
   cursor,
   dirty,
@@ -145,13 +147,13 @@ export function CanvasEditor({
               onPointerDown={pointerDown}
               onPointerMove={pointerMove}
               onPointerUp={pointerUp}
-              onPointerCancel={() => setDrag(null)}
+              onPointerCancel={pointerCancel}
             />
             {selection && (
               <div
                 className="selection"
                 style={{
-                  left: selection.x * zoom,
+                  left: (flipView ? project.width - selection.x - selection.w : selection.x) * zoom,
                   top: selection.y * zoom,
                   width: selection.w * zoom,
                   height: selection.h * zoom,
@@ -164,7 +166,11 @@ export function CanvasEditor({
       </div>
       <div className="underbar">
         <span>
-          座標 {cursor.x}, {cursor.y}
+          {tool === 'select'
+            ? selection
+              ? '枠の内側をドラッグして移動'
+              : 'ドラッグして移動したい範囲を囲む'
+            : `座標 ${cursor.x}, ${cursor.y}`}
         </span>
         <span>{dirty ? '● 未保存' : '✓ 保存済み'}</span>
         <span>{(bytes(project) / 1024).toFixed(1)} KB</span>

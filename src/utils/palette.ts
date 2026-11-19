@@ -1,6 +1,8 @@
 /**
- * PNGから色を抽出する処理。画像の読み込みと、配列からの色抽出を分けている。
+ * 作品やPNGから実際に使われた色を抽出する処理。
  */
+import type { Project } from '../model';
+
 const MAX_PALETTE_COLORS = 256;
 
 // RGBAは赤・緑・青・透明度の4要素で1ピクセル。4つずつ読み、色ごとの出現回数を数える。
@@ -24,6 +26,27 @@ export function extractPalette(pixels: Uint8ClampedArray) {
     colors: colors.slice(0, MAX_PALETTE_COLORS).map(([color]) => color),
     totalColors: counts.size,
   };
+}
+
+// .pyxpal は出現順に1行ずつ RRGGBB を並べる。透明ピクセルは空文字で保存されている。
+export function serializePyxelPalette(project: Project) {
+  const colors = new Set<string>();
+  for (const animation of project.animations) {
+    for (const frame of animation.frames) {
+      for (const pixel of frame.pixels) {
+        if (!pixel) continue;
+        if (!/^#?[0-9a-f]{6}$/i.test(pixel)) {
+          throw new Error('作品に書き出せない色コードがあります。');
+        }
+        colors.add(pixel.replace('#', '').toLowerCase());
+        if (colors.size > MAX_PALETTE_COLORS) {
+          throw new Error('使用色がPyxelの上限（256色）を超えています。');
+        }
+      }
+    }
+  }
+  if (!colors.size) throw new Error('作品に使用色がありません。');
+  return [...colors].join('\n') + '\n';
 }
 
 // 拡張子だけでは判断せず、先頭8バイトがPNGの識別情報か確認してから画像を開く。

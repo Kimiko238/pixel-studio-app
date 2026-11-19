@@ -53,7 +53,7 @@ export function SettingsDialog({ setSettings, user, shortcuts, setShortcuts, inp
           </button>
         )}
         <p>
-          パレットは「別名で保存」で自動同期します。作品のクラウド保存には上部の「保存」を押してください。
+          ログイン中に「保存」を押すと作品がクラウドにも保存されます。別端末では同じGoogleアカウントでログインして「作品一覧」を開いてください。
         </p>
         <h3>ショートカット</h3>
         <p className="hint">各操作のキーを入力してください。重複は設定できません。</p>

@@ -1,13 +1,10 @@
-/**
- * 端末内に保存した作品の一覧。検索・フォルダ・並び替え条件は親のフックで計算する。
- * 各カードの操作は親へ依頼し、クラウドから取得するときだけリモート作品を端末内へ反映する。
- */
 import type { StudioController } from '../hooks/usePixelStudio';
-import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { LogIn, Plus, Trash2 } from 'lucide-react';
 import { canvasFromPixels, currentAnimation } from '../model';
 import { bytes } from '../utils/drawing';
-import { cloudList } from '../cloud';
-import { listLocal, putLocal } from '../storage';
+import { configured, login } from '../cloud';
+import { PyxelPaletteExport } from './PyxelPaletteExport';
 type Props = Pick<
   StudioController,
   | 'setLibrary'
@@ -20,8 +17,11 @@ type Props = Pick<
   | 'sort'
   | 'setSort'
   | 'user'
-  | 'refresh'
-  | 'setStatus'
+  | 'online'
+  | 'projectCloudState'
+  | 'redirectLoginError'
+  | 'pendingCount'
+  | 'syncProjects'
   | 'filtered'
   | 'openProject'
   | 'rename'
@@ -40,8 +40,11 @@ export function ProjectLibraryDialog({
   sort,
   setSort,
   user,
-  refresh,
-  setStatus,
+  online,
+  projectCloudState,
+  redirectLoginError,
+  pendingCount,
+  syncProjects,
   filtered,
   openProject,
   rename,
@@ -49,6 +52,24 @@ export function ProjectLibraryDialog({
   duplicate,
   remove,
 }: Props) {
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState<string>();
+  const errorMessage = loginError ?? redirectLoginError;
+  const signIn = async () => {
+    setLoggingIn(true);
+    setLoginError('');
+    try {
+      await login(true);
+    } catch (error) {
+      setLoginError(
+        error instanceof Error && error.message === '許可されていないGoogleアカウントです'
+          ? error.message
+          : 'Googleログインに失敗しました。通信を確認して、もう一度お試しください。',
+      );
+    } finally {
+      setLoggingIn(false);
+    }
+  };
   return (
     <div
       className="overlay"
@@ -80,22 +101,40 @@ export function ProjectLibraryDialog({
             <option value="name">名前順</option>
             <option value="size">容量順</option>
           </select>
-          <button
-            onClick={async () => {
-              if (!user) return alert('Googleログインが必要です');
-              const remote = await cloudList(user);
-              for (const p of remote) {
-                const local = (await listLocal()).find((q) => q.id === p.id);
-                if (!local || local.revision < p.revision) await putLocal(p);
-              }
-              await refresh();
-              setStatus('クラウド作品を読み込みました');
-            }}
-            disabled={!user}
-          >
-            クラウドから取得
-          </button>
         </div>
+        {configured && (
+          <section aria-label="作品のクラウド保存">
+            {user ? (
+              <div className="librarytools">
+                <p role="status">
+                  {user.email} ·{' '}
+                  {!online
+                    ? 'オフライン・端末に保存'
+                    : projectCloudState === 'error'
+                      ? '同期できませんでした'
+                      : projectCloudState === 'syncing' || projectCloudState === 'idle'
+                        ? '作品を同期中…'
+                        : 'クラウドと同期済み'}
+                  {pendingCount > 0 && `（同期待ち ${pendingCount} 件）`}
+                </p>
+                <button
+                  onClick={syncProjects}
+                  disabled={!online || projectCloudState === 'syncing'}
+                >
+                  {projectCloudState === 'error' ? '同期を再試行' : '同期する'}
+                </button>
+              </div>
+            ) : (
+              <>
+                <p>同じGoogleアカウントでログインすると、PC・スマホから保存した作品を開けます。</p>
+                <button onClick={signIn} disabled={loggingIn}>
+                  <LogIn size={16} /> {loggingIn ? 'ログイン中…' : 'Googleでログイン'}
+                </button>
+                {errorMessage && <p role="alert">{errorMessage}</p>}
+              </>
+            )}
+          </section>
+        )}
         <div className="cards">
           {filtered.map((p) => (
             <div className="workcard" key={p.id}>
@@ -123,9 +162,18 @@ export function ProjectLibraryDialog({
                   <Trash2 size={14} />
                 </button>
               </div>
+              <PyxelPaletteExport project={p} />
             </div>
           ))}
-          {filtered.length === 0 && <p>保存した作品はありません。まず「保存」を押してください。</p>}
+          {filtered.length === 0 && (
+            <p>
+              {user && online && (projectCloudState === 'idle' || projectCloudState === 'syncing')
+                ? '作品を読み込み中…'
+                : search || folder !== 'すべて'
+                  ? '条件に一致する作品がありません。'
+                  : '保存した作品はありません。'}
+            </p>
+          )}
         </div>
       </div>
     </div>

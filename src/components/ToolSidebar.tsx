@@ -144,7 +144,7 @@ export function ToolSidebar({
           <ActionButton label="コピー" onClick={copySelection} icon={<Copy size={16} />} />
           <ActionButton label="貼付" onClick={paste} />
         </div>
-        <div className="button-row">
+        <div className="button-row selection-nudge">
           <ActionButton label="←" onClick={() => moveSelection(-1, 0)} />
           <ActionButton label="→" onClick={() => moveSelection(1, 0)} />
           <ActionButton label="↑" onClick={() => moveSelection(0, -1)} />

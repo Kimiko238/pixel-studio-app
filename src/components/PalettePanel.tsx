@@ -151,7 +151,12 @@ export function PalettePanel({
       <p className="palette-instruction">
         {isImported ? '読み込んだ色はこちら ↓' : '色をクリックして描画色を選択'}
       </p>
-      <div className="palette" role="group" aria-label="使用中のパレットの色一覧">
+      <div
+        // 色数が多いときは16列の小さいマスに切り替え、256色をスクロールなしで一覧できるようにする。
+        className={'palette' + (project.palette.length > 64 ? ' palette-dense' : '')}
+        role="group"
+        aria-label="使用中のパレットの色一覧"
+      >
         {project.palette.map((c, i) => (
           <button
             key={i}
